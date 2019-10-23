@@ -30,10 +30,10 @@ int ControlPackage(int c){
 	for ( j = 0;j < strlen(c1.filename);j++) {
 		c1.data[j+3] = c1.filename[j];
 	}
-	c1.data[2] = strlen(c1.data[3]) + 1;
+	c1.data[2] = strlen(&c1.data[3]) + 1;
 	c1.data[j+4] = 0;
 	c1.data[j+5] = c1.filesize;
-	c1.data[j+6] = strlen(c1.data[3]) + 1;
+	c1.data[j+6] = strlen(&c1.data[3]) + 1;
 
 	if(llwrite(applay.fileDescriptor,c1.data,45,TRANSMITTER) < 0){
 		printf("Error 45\n");
@@ -43,8 +43,26 @@ int ControlPackage(int c){
 return 0;
 }
 
+int setFile() {
+ 
+  printf("Name of the file to be transmitted: ");
+  scanf("%s", c1.filename);
+
+  if(c1.filename == NULL) {
+    printf("Filename is null\n");
+    return -1;
+  }
+
+  if((applay.fileDescriptor = open(c1.filename, O_RDONLY)) < 0) {
+    perror("Error opening the file");
+    return -1;
+  }
+
+  return 0;
+}
+
 int PingOP(){
-	if(applay.fileDescriptor=open(c1.filename,O_CREAT|O_WRONLY|O_APPEND, S_IWUSR|S_IRUSR) < 0){
+	if(open(c1.filename,O_CREAT|O_WRONLY|O_APPEND, S_IWUSR|S_IRUSR) < 0){
 		perror("Error opening the file");
 		return -1;
 	}
@@ -75,7 +93,7 @@ int DataPackage(int datalength, char buffer[]) {
 
 int sendControlPacket(unsigned char control_byte) {
 
-	if (control_byte == CONTROLSTART) {
+	if (control_byte == 0x02) {
 		if (setFile() < 0) {
 			printf("Error getting the file\n");
 			return -1;
@@ -84,30 +102,28 @@ int sendControlPacket(unsigned char control_byte) {
 
 	struct stat f_information;
 
-	if (fstat(al.fileDescriptor, &f_information) < 0) {
+	if (fstat(applay.fileDescriptor, &f_information) < 0) {
 		perror("Couldn't obtain information regarding the file");
 		return -1;
 	}
 
 	off_t f_size = f_information.st_size; /* total size in bytes, in signed integer */
-	st.filesize = f_size;
+	c1.filesize = f_size;
 	unsigned int l1 = sizeof(f_size);
-	unsigned int l2 = strlen(al.filename) + 1;
+	unsigned int l2 = strlen(c1.filename) + 1;
 
-	int startpackage_len = 5 + l1 + l2;
-
-	unsigned char startpackage[startpackage_len];
+	unsigned char startpackage[255];
 
 	startpackage[0] = control_byte; // CONTROLSTART or CONTROLEND
-	startpackage[1] = CONTROLT1;
+	startpackage[1] = 0x00;
 	startpackage[2] = l1;
 	*((off_t*)(startpackage + 3)) = f_size;
-	startpackage[3 + l1] = CONTROLT2;
+	startpackage[3 + l1] = 0x01;
 	startpackage[3 + l1 + 1] = l2; /* +1 from CONTROLT2 */
 
-	strcat((char*)startpackage + 5 + l1, al.filename);
+	strcat((char*)startpackage + 5 + l1, c1.filename);
 
-	if (llwrite(al.fd, startpackage, startpackage_len) < 0) {
+	if (llwrite(applay.fileDescriptor, startpackage,255,TRANSMITTER) < 0) {
 		printf("Couldn't write control package.\n");
 		return -1;
 	}
@@ -118,16 +134,16 @@ int sendControlPacket(unsigned char control_byte) {
 int sendPacket(int seqNumber, unsigned char* buffer, int length) {
 
 	int totalLength = length + 4;
-	unsigned char dataPacket[totalLength];
+	unsigned char dataPacket[255];
 
-	dataPacket[0] = CONTROLDATA;
+	dataPacket[0] = 0x01;
 	dataPacket[1] = seqNumber;
 	dataPacket[2] = length / 256;
 	dataPacket[3] = length % 256;
 
 	memcpy(&dataPacket[4], buffer, length);
 
-	if (llwrite(al.fd, dataPacket, totalLength) < 0) {
+	if (llwrite(applay.fileDescriptor, dataPacket, totalLength,TRANSMITTER) < 0) {
 		printf("Error sending data packet");
 		return -1;
 	}
@@ -137,7 +153,7 @@ int sendPacket(int seqNumber, unsigned char* buffer, int length) {
 
 int receiveControlPacket() {
 	unsigned char* read_package;
-	unsigned int package_size = llread(al.fd, &read_package);
+	unsigned int package_size = llread(applay.fileDescriptor, &read_package,RECEIVER);
 	int i;
 
 	if (package_size < 0) {
@@ -147,7 +163,7 @@ int receiveControlPacket() {
 
 	int pck_index = 0;
 
-	if (read_package[pck_index] == CONTROLEND) {
+	if (read_package[pck_index] == 0x03) {
 		free(read_package);
 		return 0;
 	} /*End of transfer process, nothing to process any further.*/
@@ -160,20 +176,19 @@ int receiveControlPacket() {
 		pck_type = read_package[pck_index++]; // read T, update to L
 
 		switch (pck_type) {
-		case CONTROLT1:
+		case 0x00:
 			n_bytes = (unsigned int)read_package[pck_index++]; // read L1, update to V1
 
-			al.fileSize = *((off_t*)(read_package + pck_index));
-			st.filesize = al.fileSize;
-			al.file_data = (unsigned char*)malloc(al.fileSize); /* Allocating file length not inicialized */
+			c1.filesize = *((off_t*)(read_package + pck_index));
+			//d1.data = (unsigned char*)malloc(c1.filesize); /* Allocating file length not inicialized */
 			pck_index += n_bytes; //update to T2
 			break;
 
-		case CONTROLT2:
+		case 0x01:
 			n_bytes = (unsigned int)read_package[pck_index++]; // read L2, update to V2
-			al.filename = (char*)malloc(n_bytes + 1); /* Allocating filename memory block not inicialized */
-			memcpy(al.filename, (char*)&read_package[pck_index + 1], n_bytes + 1); /* Transfering block of memory to a.layer's filename */
-			getFile();
+			//c1.filename = (char*)malloc(n_bytes + 1); /* Allocating filename memory block not inicialized */
+			memcpy(c1.filename, (char*)&read_package[pck_index + 1], n_bytes + 1); /* Transfering block of memory to a.layer's filename */
+			PingOP();
 			break;
 
 		default:
@@ -191,7 +206,7 @@ int receivePacket(unsigned char** buffer, int seqNumber) {
 	unsigned char* information;
 	int K = 0; // number of octets
 
-	if (llread(al.fd, &information) < 0) {
+	if (llread(applay.fileDescriptor, &information,RECEIVER) < 0) {
 		printf("error in llread\n");
 		return -1;
 	}
@@ -201,10 +216,10 @@ int receivePacket(unsigned char** buffer, int seqNumber) {
 		return -1;
 	}
 
-	unsigned char C = information[0]; // control field
+	unsigned char Ch = information[0]; // control field
 	int N = information[1]; // sequence number
 
-	if (C != CONTROLDATA) {
+	if (Ch != 0x01) {
 		printf("receivePacket: C doesn't indicate data\n");
 		return -1;
 	}

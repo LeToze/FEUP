@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-//#include <unistd.h>
-#include <io.h>
+#include <unistd.h>
+//#include <io.h>
 #include <signal.h>
 
 #define BAUDRATE B38400
@@ -210,13 +210,13 @@ int maq_estados_I(char c) {
 		}
 	case 3:
 		if (fseq) {
-			if (c == A ^ SEQ_0) {
+			if (c == (A ^ SEQ_0)) {
 				estado = 4;
 				break;
 			}
 		}
 		else if (!fseq) {
-			if (c== A ^ SEQ_1) {
+			if (c== (A ^ SEQ_1)) {
 				estado = 4;
 				break;
 			}
@@ -317,6 +317,7 @@ int maq_estados_I(char c) {
 		}
 
 	}
+	return 0;
 }
 
 void big_maq_estados(){
@@ -375,6 +376,7 @@ int send_I(int fd,char frame[]) {
 	for (i = 0;i < 5;i++) {
 		write(fd, &set_buf[i],1);
 	}
+	return 0;
 }
 
 int send(int fd,int sign, int mode){
